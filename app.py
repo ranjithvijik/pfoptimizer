@@ -710,7 +710,7 @@ with st.sidebar:
     with st.expander("📈 Data Parameters", expanded=True):
         tickers_txt = st.text_area(
             "Tickers (comma-separated)", 
-            "AAPL, MSFT, GOOGL, AMZN, NVDA, JPM, GLD, SPY",
+            "AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA",
             help="Enter stock tickers separated by commas. SPY is used as benchmark."
         )
         tickers = [t.strip().upper() for t in tickers_txt.replace("\n",",").split(",") if t.strip()]
