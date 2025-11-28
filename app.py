@@ -1,6 +1,6 @@
 """
 Portfolio Optimizer
-pip install streamlit pandas numpy scipy yfinance plotly scikit-learn xlsxwriter openpyxl
+pip install streamlit pandas numpy scipy matplotlib yfinance plotly scikit-learn xlsxwriter openpyxl
 """
 
 import streamlit as st
