@@ -806,7 +806,7 @@ with st.sidebar:
     
     # Run Analysis Button
     st.markdown("---")
-    run_btn = st.button("🚀 Run Analysis", type="primary", use_container_width=True)
+    run_btn = st.button("🚀 Run Analysis", type="primary", width="stretch")
 
 # --- Main Analysis ---
 if run_btn:
@@ -888,7 +888,7 @@ if run_btn:
                 'MaxDD': '{:.2%}'
             }).background_gradient(subset=['1M', '3M', 'YTD', '1Y'], cmap='RdYlGn', vmin=-0.2, vmax=0.2)
             
-            st.dataframe(snapshot_styled, use_container_width=True)
+            st.dataframe(snapshot_styled, width="stretch")
             
             # Price Performance Chart
             col1, col2 = st.columns([2, 1])
@@ -902,7 +902,7 @@ if run_btn:
                     labels={'value': 'Normalized Price', 'index': 'Date'}
                 )
                 fig_norm.update_layout(height=400, showlegend=True)
-                st.plotly_chart(fig_norm, use_container_width=True)
+                st.plotly_chart(fig_norm, width="stretch")
             
             with col2:
                 st.subheader("🎯 Risk-Return Profile")
@@ -919,7 +919,7 @@ if run_btn:
                 )
                 fig_scatter.update_traces(textposition='top center')
                 fig_scatter.update_layout(height=400)
-                st.plotly_chart(fig_scatter, use_container_width=True)
+                st.plotly_chart(fig_scatter, width="stretch")
             
             # Correlation Matrix and Metrics
             col3, col4 = st.columns(2)
@@ -935,7 +935,7 @@ if run_btn:
                     title="Asset Correlations"
                 )
                 fig_corr.update_layout(height=400)
-                st.plotly_chart(fig_corr, use_container_width=True)
+                st.plotly_chart(fig_corr, width="stretch")
             
             with col4:
                 st.subheader("📊 Market Regime")
@@ -953,7 +953,7 @@ if run_btn:
                         }
                     )
                     fig_regime.update_layout(height=400)
-                    st.plotly_chart(fig_regime, use_container_width=True)
+                    st.plotly_chart(fig_regime, width="stretch")
             
             # Detailed Metrics Table
             st.subheader("📋 Detailed Performance Metrics")
@@ -973,7 +973,7 @@ if run_btn:
                 'Info Ratio': '{:.2f}'
             }).background_gradient(subset=['Sharpe', 'Sortino'], cmap='RdYlGn')
             
-            st.dataframe(metrics_styled, use_container_width=True)
+            st.dataframe(metrics_styled, width="stretch")
             
             # Rolling Statistics
             if analyzer.rolling:
@@ -1010,7 +1010,7 @@ if run_btn:
                         title=f"Rolling {roll_metric} ({roll_window}-day window)"
                     )
                     fig_roll.update_layout(height=400)
-                    st.plotly_chart(fig_roll, use_container_width=True)
+                    st.plotly_chart(fig_roll, width="stretch")
         
         # TAB 2: Portfolio Optimization
         with tab2:
@@ -1024,7 +1024,7 @@ if run_btn:
                     st.subheader("📊 Optimal Weights")
                     weights_display = analyzer.weights.copy()
                     weights_display['Weight'] = weights_display['Weight'].apply(lambda x: f"{x:.2%}")
-                    st.dataframe(weights_display, use_container_width=True)
+                    st.dataframe(weights_display, width="stretch")
                     
                     # Portfolio metrics
                     if analyzer.attribution is not None:
@@ -1051,7 +1051,7 @@ if run_btn:
                     )
                     fig_pie.update_traces(textposition='inside', textinfo='percent+label')
                     fig_pie.update_layout(height=400)
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, width="stretch")
                 
                 # Performance Attribution
                 if analyzer.attribution is not None:
@@ -1086,7 +1086,7 @@ if run_btn:
                     )
                     
                     fig_attr.update_layout(height=400, showlegend=False)
-                    st.plotly_chart(fig_attr, use_container_width=True)
+                    st.plotly_chart(fig_attr, width="stretch")
                     
                     # Attribution table
                     st.subheader("📋 Detailed Attribution")
@@ -1097,7 +1097,7 @@ if run_btn:
                         'Return Contribution': '{:.2%}',
                         'Risk Contribution': '{:.2%}'
                     })
-                    st.dataframe(attr_styled, use_container_width=True)
+                    st.dataframe(attr_styled, width="stretch")
         
         # TAB 3: Backtest Results
         with tab3:
@@ -1161,7 +1161,7 @@ if run_btn:
                     hovermode='x unified'
                 )
                 
-                st.plotly_chart(fig_backtest, use_container_width=True)
+                st.plotly_chart(fig_backtest, width="stretch")
                 
                 # Drawdown chart
                 st.subheader("📉 Drawdown Analysis")
@@ -1187,7 +1187,7 @@ if run_btn:
                     height=300
                 )
                 
-                st.plotly_chart(fig_dd, use_container_width=True)
+                st.plotly_chart(fig_dd, width="stretch")
                 
                 # Additional metrics
                 if analyzer.backtest_metrics.get('tracking_error') is not None:
@@ -1286,7 +1286,7 @@ if run_btn:
                     hovermode='x unified'
                 )
                 
-                st.plotly_chart(fig_mc, use_container_width=True)
+                st.plotly_chart(fig_mc, width="stretch")
                 
                 # Distribution of final values
                 st.subheader("📊 Distribution of Final Values")
@@ -1310,7 +1310,7 @@ if run_btn:
                                    annotation_text=f"CVaR (95%): ${cvar_val:.0f}")
                 
                 fig_hist.update_layout(height=400)
-                st.plotly_chart(fig_hist, use_container_width=True)
+                st.plotly_chart(fig_hist, width="stretch")
                 
                 # Probability table
                 st.subheader("📋 Probability Analysis")
@@ -1334,7 +1334,7 @@ if run_btn:
                 
                 prob_df = pd.DataFrame(prob_data)
                 prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.1%}")
-                st.dataframe(prob_df, use_container_width=True)
+                st.dataframe(prob_df, width="stretch")
             else:
                 st.info("Run portfolio optimization first to enable Monte Carlo simulation.")
         
@@ -1396,7 +1396,7 @@ if run_btn:
                     showlegend=True
                 )
                 
-                st.plotly_chart(fig_regime_timeline, use_container_width=True)
+                st.plotly_chart(fig_regime_timeline, width="stretch")
                 
                 # Regime statistics
                 col1, col2 = st.columns(2)
@@ -1485,7 +1485,7 @@ if run_btn:
                 hovermode='closest'
             )
             
-            st.plotly_chart(fig_frontier, use_container_width=True)
+            st.plotly_chart(fig_frontier, width="stretch")
             
             # Risk Decomposition
             if analyzer.weights is not None and analyzer.attribution is not None:
@@ -1503,7 +1503,7 @@ if run_btn:
                 )
                 
                 fig_risk.update_layout(height=400)
-                st.plotly_chart(fig_risk, use_container_width=True)
+                st.plotly_chart(fig_risk, width="stretch")
         
         # --- Download Section ---
         st.markdown("---")
@@ -1518,7 +1518,7 @@ if run_btn:
                 data=excel_data,
                 file_name=f"Portfolio_Analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width="stretch"
             )
         
         with col2:
@@ -1555,11 +1555,11 @@ Max Drawdown: {analyzer.backtest_metrics.get('max_drawdown', 'N/A'):.2%} if anal
                 data=summary_report,
                 file_name=f"Portfolio_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
                 mime="text/plain",
-                use_container_width=True
+                width="stretch"
             )
         
         with col3:
-            if st.button("🔄 Reset Analysis", use_container_width=True):
+            if st.button("🔄 Reset Analysis", width="stretch"):
                 st.rerun()
 
 # Footer
