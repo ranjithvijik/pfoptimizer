@@ -86,7 +86,7 @@ def annualized_mean(rets, freq=TRADING_DAYS):
     return rets.mean() * freq
 
 def annualized_vol(rets, freq=TRADING_DAYS): 
-    return rets.std() * np.sqrt(freq)
+    return rets.std(ddof=1) * np.sqrt(freq)
 
 def sharpe_ratio(rets, rf=0.0, freq=TRADING_DAYS): 
     vol = annualized_vol(rets, freq)
@@ -94,13 +94,13 @@ def sharpe_ratio(rets, rf=0.0, freq=TRADING_DAYS):
     return (annualized_mean(rets, freq) - rf) / vol if vol > 0 else 0
 
 def downside_deviation(rets, mar=0.0, freq=TRADING_DAYS):
-    neg = rets[rets < mar]
+    neg = rets[rets <= mar]
     if len(neg) == 0: 
         return 0.0
     return np.sqrt((neg**2).mean()) * np.sqrt(freq)
 
 def sortino_ratio(rets, rf=0.0, freq=TRADING_DAYS):
-    dd = downside_deviation(rets, 0, freq)
+    dd = downside_deviation(rets, rf/freq, freq)
     return (annualized_mean(rets, freq) - rf) / dd if dd > 0 else 0
 
 def max_drawdown(rets):
@@ -298,9 +298,10 @@ class EnhancedUnifiedAnalyzer:
         # Extract SPY for calculations
         if 'SPY' in all_returns.columns:
             self.benchmark_returns = all_returns['SPY']
+            self.has_benchmark = True
         else:
-            self.benchmark_returns = all_returns.mean(axis=1) # Fallback
-
+            self.benchmark_returns = pd.Series(dtype=float)
+            self.has_benchmark = False
         valid_tickers = [t for t in tickers if t in df_close.columns]
         
         self.prices = df_close[valid_tickers]
@@ -424,9 +425,13 @@ class EnhancedUnifiedAnalyzer:
         
         # Classify regime
         regime = pd.Series('Normal', index=spy_returns.index)
-        regime[sma_short > sma_long] = 'Bull'
-        regime[sma_short <= sma_long] = 'Bear'
-        regime[volatility > volatility.quantile(0.8)] = 'High Vol'
+        conditions = [
+            volatility > volatility.quantile(0.8),
+            (sma_short > sma_long) & (volatility <= volatility.quantile(0.8)),
+            (sma_short <= sma_long) & (volatility <= volatility.quantile(0.8))
+        ]
+        choices = ['High Vol', 'Bull', 'Bear']
+        regime = np.select(conditions, choices, default='Normal')
         
         self.regime = regime
     
@@ -496,8 +501,8 @@ class EnhancedUnifiedAnalyzer:
         try:
             res = optimize.minimize(obj, x0, method='SLSQP', bounds=bnds, constraints=cons)
             optimal_weights = res.x
-        except:
-            st.warning("Optimization failed to converge. Returning equal weights.")
+        except Exception as e:
+            st.error(f"Optimization failed: {str(e)}")
             optimal_weights = x0
         
         self.weights = pd.DataFrame({
@@ -577,7 +582,9 @@ class EnhancedUnifiedAnalyzer:
             # Assumes rebalance happens at closing prices
             cum_per = (1 + per_ret @ new_w).prod()
             
-            vals.append(vals[-1] * (cum_per - cost))
+            strategy_return = cum_per - 1
+            net_return = strategy_return - cost
+            vals.append(vals[-1] * (1 + net_return))
             dates.append(self.returns.index[i])
             turnovers.append(turnover)
             weights_history.append(new_w)
@@ -639,11 +646,13 @@ class EnhancedUnifiedAnalyzer:
         simulations = np.zeros((n_simulations, n_days))
         
         for i in range(n_simulations):
-            daily_returns = np.random.normal(
-                port_mu, 
-                port_vol, 
-                n_days
-            )
+            if distribution == 'normal':
+                daily_returns = np.random.normal(port_mu, port_vol, n_days)
+            elif distribution == 'tstudent':
+                from scipy.stats import t
+                daily_returns = t.rvs(df=4, loc=port_mu, scale=port_vol, size=n_days)
+            elif distribution == 'empirical':
+                daily_returns = np.random.choice(historical_rets, size=n_days, replace=True)
             simulations[i] = (1 + daily_returns).cumprod() * 100
         
         # Calculate statistics
@@ -727,7 +736,13 @@ with st.sidebar:
             "AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA",
             help="Enter stock tickers separated by commas. SPY is used as benchmark."
         )
-        tickers = [t.strip().upper() for t in tickers_txt.replace("\n",",").split(",") if t.strip()]
+        import re
+        ticker_pattern = re.compile(r'^[A-Z]{1,5}$')
+        raw_tickers = [t.strip().upper() for t in tickers_txt.replace("\n",",").split(",")]
+        valid_tickers = [t for t in raw_tickers if ticker_pattern.match(t)]
+        if len(valid_tickers) < len(raw_tickers):
+            st.warning(f"Invalid tickers removed")
+        tickers = valid_tickers
         
         col1, col2 = st.columns(2)
         with col1:
