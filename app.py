@@ -690,7 +690,15 @@ class EnhancedUnifiedAnalyzer:
                 from scipy.stats import t
                 daily_returns = t.rvs(df=4, loc=port_mu, scale=port_vol, size=n_days)
             elif distribution == 'empirical':
-                daily_returns = np.random.choice(historical_rets, size=n_days, replace=True)
+                # Calculate historical portfolio returns using current weights
+                historical_port_rets = (self.returns * full_weights).sum(axis=1)
+    
+                # Sample with replacement from historical returns
+                daily_returns = np.random.choice(
+                    historical_port_rets.values, 
+                    size=n_days, 
+                    replace=True
+                )
             simulations[i] = (1 + daily_returns).cumprod() * 100
         
         # Calculate statistics
