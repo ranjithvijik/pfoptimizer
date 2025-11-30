@@ -944,7 +944,7 @@ if run_btn:
             method=opt_method,
             risk_model=risk_model,
             ret_model=ret_model,
-            bounds=(-1,1) if allow_short else (0,1),
+            bounds=(-1, 1) if allow_short else (0, 1),
             rf=rf_rate,
             views_dict=views_dict if use_views else None
         )
@@ -1447,103 +1447,359 @@ if run_btn:
         
         # TAB 5: Advanced Analytics
         with tab5:
-            st.header("Advanced Analytics")
-            st.subheader("🌡️ Market Regime Analysis")
-            
-            # Check if regime data exists and is not empty
-            if analyzer.regime is not None and not analyzer.regime.empty:
-                fig_regime_timeline = go.Figure()
-                
-                # Define colors with opacity
-                regime_colors = {
-                    'Bull': 'rgba(0, 128, 0, 0.2)', 
-                    'Bear': 'rgba(255, 0, 0, 0.2)', 
-                    'High Vol': 'rgba(255, 165, 0, 0.2)', 
-                    'Normal': 'rgba(0, 0, 255, 0.2)', 
-                    'Unknown': 'rgba(128, 128, 128, 0.2)'
+            st.header("📊 Advanced Analytics")
+
+            # ===== MARKET REGIME ANALYSIS WITH MULTIPLE INDEXES =====
+            st.subheader("🌡️ Market Regime Analysis with Multi-Index Comparison")
+
+            # Check if regime data exists
+            if analyzer.regime is None or analyzer.regime.empty:
+                st.warning("⚠️ Not enough data to calculate Market Regimes. Try increasing the date range.")
+            else:
+                # ===== CREATE ENHANCED FIGURE WITH DUAL AXES =====
+                fig_regime = make_subplots(
+                    rows=2, cols=1,
+                    subplot_titles=("Market Performance Across Regimes", "Market Regime Timeline"),
+                    specs=[
+                        [{"secondary_y": True}],
+                        [{"secondary_y": False}]
+                    ],
+                    vertical_spacing=0.12,
+                    row_heights=[0.6, 0.4]
+                )
+
+                # ===== ENHANCED COLOR SCHEME =====
+                regime_colors_bg = {
+                    'Bull': 'rgba(34, 197, 94, 0.15)',       # Green - vibrant
+                    'Bear': 'rgba(239, 68, 68, 0.15)',       # Red - vibrant
+                    'High Vol': 'rgba(249, 115, 22, 0.15)',  # Orange - vibrant
+                    'Normal': 'rgba(59, 130, 246, 0.15)',    # Blue - vibrant
+                    'Unknown': 'rgba(107, 114, 128, 0.15)'   # Gray
                 }
-                
-                # Create a DataFrame for grouping consecutive regimes
+
+                regime_colors_line = {
+                    'Bull': 'rgba(34, 197, 94, 1)',       # Solid green
+                    'Bear': 'rgba(239, 68, 68, 1)',       # Solid red
+                    'High Vol': 'rgba(249, 115, 22, 1)',  # Solid orange
+                    'Normal': 'rgba(59, 130, 246, 1)',    # Solid blue
+                    'Unknown': 'rgba(107, 114, 128, 1)'   # Solid gray
+                }
+
+                # ===== INDEX COLOR SCHEME =====
+                index_colors = {
+                    'SPY': {'color': '#000000', 'dash': 'solid', 'width': 3},
+                    'QQQ': {'color': '#1f77b4', 'dash': 'solid', 'width': 2.5},
+                    'IWM': {'color': '#ff7f0e', 'dash': 'solid', 'width': 2.5},
+                    'DBC': {'color': '#2ca02c', 'dash': 'solid', 'width': 2.5}
+                }
+
+                # ===== CONFIGURE INDEXES =====
+                indexes_to_plot = ['SPY', 'QQQ', 'IWM', 'DBC']
+                index_data = {}
+
+                # Fetch index data
+                with st.spinner("📈 Fetching index data..."):
+                    for idx in indexes_to_plot:
+                        try:
+                            idx_data_raw = yf.download(
+                                idx,
+                                start=analyzer.prices.index[0],
+                                end=analyzer.prices.index[-1],
+                                progress=False
+                            )['Close']
+                            if len(idx_data_raw) > 0:
+                                index_data[idx] = idx_data_raw
+                        except:
+                            pass
+
+                # ===== ROW 1: MULTI-INDEX PERFORMANCE =====
+
+                # Add regime background rectangles to Row 1
                 df_regime = analyzer.regime.to_frame(name='regime')
                 df_regime['group'] = (df_regime['regime'] != df_regime['regime'].shift()).cumsum()
-                
-                # Add colored background rectangles
+
                 for _, group_data in df_regime.groupby('group'):
                     regime_type = group_data['regime'].iloc[0]
-                    # Ensure we have valid dates
-                    if len(group_data) > 0:
-                        start_date = group_data.index[0]
-                        # Extend the rectangle to the next available date or add 1 day
-                        end_date = group_data.index[-1] + pd.Timedelta(days=1)
-                        
-                        fig_regime_timeline.add_vrect(
-                            x0=start_date, 
-                            x1=end_date, 
-                            fillcolor=regime_colors.get(regime_type, 'gray'), 
-                            opacity=1, 
-                            layer="below", 
-                            line_width=0
+                    start_date = group_data.index[0]
+                    end_date = group_data.index[-1] + pd.Timedelta(days=1)
+
+                    fig_regime.add_vrect(
+                        x0=start_date,
+                        x1=end_date,
+                        fillcolor=regime_colors_bg.get(regime_type, 'rgba(107, 114, 128, 0.15)'),
+                        layer="below",
+                        line_width=0,
+                        row=1,
+                        col=1
+                    )
+
+                # Plot each index on Row 1
+                if len(index_data) > 0:
+                    for idx_name, idx_series in index_data.items():
+                        # Normalize to 100 at start
+                        idx_normalized = (idx_series / idx_series.iloc[0]) * 100
+
+                        fig_regime.add_trace(
+                            go.Scatter(
+                                x=idx_normalized.index,
+                                y=idx_normalized.values,
+                                name=idx_name,
+                                line=dict(
+                                    color=index_colors[idx_name]['color'],
+                                    width=index_colors[idx_name]['width'],
+                                    dash=index_colors[idx_name]['dash']
+                                ),
+                                hovertemplate=f'<b>{idx_name}</b><br>Date: %{{x|%Y-%m-%d}}<br>Value: %{{y:.2f}}<extra></extra>',
+                                opacity=0.8
+                            ),
+                            row=1,
+                            col=1,
+                            secondary_y=False
                         )
-                
-                # Calculate and Plot SPY (Benchmark)
-                spy_rets = analyzer.benchmark_returns.fillna(0)
-                
-                # Reindex to match the regime timeline exactly
-                spy_rets = spy_rets.reindex(analyzer.regime.index).fillna(0)
-                
-                # Calculate cumulative performance
-                spy_norm = (1 + spy_rets).cumprod() * 100
-                
-                # Normalize to start at 100
-                if len(spy_norm) > 0:
-                    spy_norm = spy_norm / spy_norm.iloc[0] * 100
-                
-                fig_regime_timeline.add_trace(go.Scatter(
-                    x=spy_norm.index, 
-                    y=spy_norm.values, 
-                    name='Market Index (SPY)', 
-                    line=dict(color='black', width=2)
-                ))
-                
-                fig_regime_timeline.update_layout(
-                    title="Market Regime Timeline", 
-                    xaxis_title="Date", 
-                    yaxis_title="Normalized Price", 
-                    height=400, 
+
+                # ===== ROW 2: REGIME TIMELINE =====
+
+                # Add regime background to Row 2
+                for _, group_data in df_regime.groupby('group'):
+                    regime_type = group_data['regime'].iloc[0]
+                    start_date = group_data.index[0]
+                    end_date = group_data.index[-1] + pd.Timedelta(days=1)
+
+                    fig_regime.add_vrect(
+                        x0=start_date,
+                        x1=end_date,
+                        fillcolor=regime_colors_bg.get(regime_type, 'rgba(107, 114, 128, 0.15)'),
+                        layer="below",
+                        line_width=0,
+                        row=2,
+                        col=1
+                    )
+
+                    # Add regime label annotations
+                    mid_date = start_date + (end_date - start_date) / 2
+                    mid_price = analyzer.prices.iloc[:, 0].mean() if len(analyzer.prices) > 0 else 0
+
+                    fig_regime.add_annotation(
+                        x=mid_date,
+                        y=mid_price,
+                        text=f"<b>{regime_type}</b>",
+                        showarrow=False,
+                        font=dict(size=10, color=regime_colors_line[regime_type]),
+                        row=2,
+                        col=1,
+                        xanchor='center'
+                    )
+
+                # Plot strategy performance on Row 2
+                if analyzer.backtest_res is not None:
+                    fig_regime.add_trace(
+                        go.Scatter(
+                            x=analyzer.backtest_res.index,
+                            y=analyzer.backtest_res['Value'].values,
+                            name='Strategy',
+                            line=dict(color='#7c3aed', width=3),
+                            fill='tozeroy',
+                            fillcolor='rgba(124, 58, 237, 0.2)',
+                            hovertemplate='<b>Strategy</b><br>Date: %{x|%Y-%m-%d}<br>Value: $%{y:.2f}<extra></extra>'
+                        ),
+                        row=2,
+                        col=1,
+                        secondary_y=False
+                    )
+
+                # ===== UPDATE LAYOUT WITH PROFESSIONAL STYLING =====
+                fig_regime.update_layout(
+                    title={
+                        'text': "📊 Market Regime Analysis: Multi-Index Performance & Strategy Timeline",
+                        'font': {'size': 20, 'color': '#1f2937'},
+                        'x': 0.5,
+                        'xanchor': 'center'
+                    },
+                    height=700,
                     showlegend=True,
-                    hovermode="x unified"
+                    hovermode='x unified',
+                    template='plotly_white',
+                    margin=dict(l=80, r=80, t=100, b=80),
+
+                    # Legend styling
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1,
+                        bgcolor="rgba(255, 255, 255, 0.8)",
+                        bordercolor="#d1d5db",
+                        borderwidth=1
+                    ),
+
+                    # Grid styling
+                    plot_bgcolor='rgba(249, 250, 251, 0.5)',
+                    paper_bgcolor='white',
+
+                    # Font styling
+                    font=dict(
+                        family="Arial, sans-serif",
+                        size=11,
+                        color="#374151"
+                    )
                 )
-                st.plotly_chart(fig_regime_timeline, width="stretch")
-                
-                # Regime Stats Columns
-                col1, col2 = st.columns(2)
+
+                # Update axes with better styling
+                fig_regime.update_xaxes(
+                    showgrid=True,
+                    gridwidth=1,
+                    gridcolor='rgba(209, 213, 219, 0.3)',
+                    zeroline=False,
+                    title_text="Date",
+                    row=2,
+                    col=1
+                )
+
+                fig_regime.update_yaxes(
+                    showgrid=True,
+                    gridwidth=1,
+                    gridcolor='rgba(209, 213, 219, 0.3)',
+                    zeroline=False,
+                    title_text="Portfolio Value ($)",
+                    row=2,
+                    col=1
+                )
+
+                fig_regime.update_yaxes(
+                    title_text="Normalized Price (Base = 100)",
+                    row=1,
+                    col=1
+                )
+
+                # Display chart
+                st.plotly_chart(fig_regime, use_container_width=True)
+
+                # ===== REGIME STATISTICS DASHBOARD =====
+                st.markdown("---")
+                st.subheader("📊 Regime & Performance Statistics")
+
+                col1, col2, col3, col4 = st.columns(4)
+
                 with col1:
-                    st.markdown("**Regime Distribution**")
-                    regime_stats = analyzer.regime.value_counts(normalize=True)
-                    for regime, pct in regime_stats.items():
-                        st.write(f"• {regime}: {pct:.1%}")
+                    st.markdown("### 📈 **Bull Market**")
+                    bull_days = (analyzer.regime == 'Bull').sum()
+                    bull_pct = (bull_days / len(analyzer.regime) * 100) if len(analyzer.regime) > 0 else 0
+                    st.metric("Days", f"{bull_days:,}", f"{bull_pct:.1f}%", delta_color="inverse")
+
                 with col2:
-                    st.markdown("**Current Regime**")
-                    if not analyzer.regime.empty:
-                        current_regime = analyzer.regime.iloc[-1]
-                        color_map = {'Bull': 'green', 'Bear': 'red', 'High Vol': 'orange', 'Normal': 'blue'}
-                        regime_color = color_map.get(current_regime, 'gray')
-                        st.markdown(f"<h3 style='color: {regime_color}'>{current_regime}</h3>", unsafe_allow_html=True)
-            else:
-                st.warning("Not enough data to calculate Market Regimes. Try increasing the date range.")
-            
-            # Efficient Frontier Section
+                    st.markdown("### 📉 **Bear Market**")
+                    bear_days = (analyzer.regime == 'Bear').sum()
+                    bear_pct = (bear_days / len(analyzer.regime) * 100) if len(analyzer.regime) > 0 else 0
+                    st.metric("Days", f"{bear_days:,}", f"{bear_pct:.1f}%", delta_color="inverse")
+
+                with col3:
+                    st.markdown("### 🌊 **High Volatility**")
+                    hvol_days = (analyzer.regime == 'High Vol').sum()
+                    hvol_pct = (hvol_days / len(analyzer.regime) * 100) if len(analyzer.regime) > 0 else 0
+                    st.metric("Days", f"{hvol_days:,}", f"{hvol_pct:.1f}%", delta_color="inverse")
+
+                with col4:
+                    st.markdown("### ⚖️ **Normal**")
+                    normal_days = (analyzer.regime == 'Normal').sum()
+                    normal_pct = (normal_days / len(analyzer.regime) * 100) if len(analyzer.regime) > 0 else 0
+                    st.metric("Days", f"{normal_days:,}", f"{normal_pct:.1f}%", delta_color="inverse")
+
+                # ===== CURRENT REGIME DISPLAY =====
+                st.markdown("---")
+                st.subheader("🎯 Current Market Regime")
+
+                if len(analyzer.regime) > 0:
+                    current_regime = analyzer.regime.iloc[-1]
+
+                    # Color mapping
+                    regime_display_colors = {
+                        'Bull': '#22c55e',      # Green
+                        'Bear': '#ef4444',      # Red
+                        'High Vol': '#f97316',  # Orange
+                        'Normal': '#3b82f6'     # Blue
+                    }
+
+                    # Regime emoji mapping
+                    regime_emoji = {
+                        'Bull': '📈',
+                        'Bear': '📉',
+                        'High Vol': '🌊',
+                        'Normal': '⚖️'
+                    }
+
+                    regime_color = regime_display_colors.get(current_regime, '#6b7280')
+                    regime_icon = regime_emoji.get(current_regime, '📊')
+
+                    # Create beautiful regime display
+                    col_regime1, col_regime2 = st.columns([1, 2])
+
+                    with col_regime1:
+                        st.markdown(
+                            f"""
+                            <div style='
+                                text-align: center;
+                                padding: 30px;
+                                background: linear-gradient(135deg, {regime_color}20 0%, {regime_color}05 100%);
+                                border: 3px solid {regime_color};
+                                border-radius: 15px;
+                                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                            '>
+                                <h2 style='color: {regime_color}; margin: 0; font-size: 48px;'>{regime_icon}</h2>
+                                <h1 style='color: {regime_color}; margin: 10px 0 0 0;'>{current_regime}</h1>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+
+                    with col_regime2:
+                        st.markdown(
+                            f"""
+                            <div style='padding: 30px; background-color: #f9fafb; border-radius: 15px;'>
+                                <h3 style='color: {regime_color}; margin: 0;'>Regime Details</h3>
+                                <p style='margin: 15px 0;'>
+                                    <b>Characteristics:</b><br>
+                                    • Market volatility: {'High' if current_regime == 'High Vol' else 'Moderate' if current_regime == 'Normal' else 'Low'}<br>
+                                    • Trend direction: {'Uptrend' if current_regime == 'Bull' else 'Downtrend' if current_regime == 'Bear' else 'Mixed'}<br>
+                                    • Trading strategy: {'Aggressive' if current_regime in ['Bull', 'Normal'] else 'Defensive' if current_regime == 'Bear' else 'Tactical'}
+                                </p>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+
+                # ===== INDEX PERFORMANCE SUMMARY =====
+                if len(index_data) > 0:
+                    st.markdown("---")
+                    st.subheader("📈 Index Performance Summary")
+
+                    index_summary = []
+                    for idx_name, idx_series in index_data.items():
+                        total_return = (idx_series.iloc[-1] / idx_series.iloc[0] - 1) * 100 if len(idx_series) > 0 else 0
+                        current_price = idx_series.iloc[-1] if len(idx_series) > 0 else 0
+
+                        index_summary.append({
+                            'Index': idx_name,
+                            'Total Return': f'{total_return:+.2f}%',
+                            'Current Price': f'${current_price:.2f}',
+                            'Period Return': total_return
+                        })
+
+                    summary_df = pd.DataFrame(index_summary)
+                    st.dataframe(summary_df, use_container_width=True)
+
+            # ===== EFFICIENT FRONTIER SECTION =====
             st.markdown("---")
             st.subheader("📈 Efficient Frontier")
-            
+
             # Efficient Frontier Calculations
             returns_mean = analyzer.returns.mean() * analyzer.freq_scaler
             cov_matrix = analyzer.returns.cov() * analyzer.freq_scaler
-            
+
             n_portfolios = 1000
             results = np.zeros((3, n_portfolios))
             np.random.seed(10)
-            
+
             for i in range(n_portfolios):
                 weights = np.random.random(len(analyzer.returns.columns))
                 weights /= np.sum(weights)
@@ -1551,95 +1807,105 @@ if run_btn:
                 portfolio_std = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
                 results[0, i] = portfolio_return
                 results[1, i] = portfolio_std
-                results[2, i] = (portfolio_return - rf_rate) / portfolio_std if portfolio_std > 0 else 0
-            
+                # Ensure rf_rate is defined in your broader scope, otherwise default to 0.04
+                rf_rate_calc = rf_rate if 'rf_rate' in locals() else 0.04
+                results[2, i] = (portfolio_return - rf_rate_calc) / portfolio_std if portfolio_std > 0 else 0
+
             fig_frontier = go.Figure()
             fig_frontier.add_trace(go.Scatter(
-                x=results[1], 
-                y=results[0], 
-                mode='markers', 
+                x=results[1],
+                y=results[0],
+                mode='markers',
                 marker=dict(
-                    size=5, 
-                    color=results[2], 
-                    colorscale='Viridis', 
-                    showscale=True, 
+                    size=5,
+                    color=results[2],
+                    colorscale='Viridis',
+                    showscale=True,
                     colorbar=dict(title="Sharpe Ratio")
-                ), 
-                text=[f"Sharpe: {s:.2f}" for s in results[2]], 
-                hovertemplate="Risk: %{x:.2%}<br>Return: %{y:.2%}<br>%{text}", 
+                ),
+                text=[f"Sharpe: {s:.2f}" for s in results[2]],
+                hovertemplate="Risk: %{x:.2%}<br>Return: %{y:.2%}<br>%{text}",
                 name='Random Portfolios'
             ))
-            
+
             if analyzer.weights is not None:
                 # Align optimal weights to the returns columns
                 curr_weights_series = analyzer.weights.set_index('Ticker')['Weight']
                 curr_weights_aligned = np.array([curr_weights_series.get(t, 0.0) for t in analyzer.returns.columns])
-                
+
                 curr_return = np.sum(curr_weights_aligned * returns_mean.values)
                 curr_std = np.sqrt(np.dot(curr_weights_aligned.T, np.dot(cov_matrix.values, curr_weights_aligned)))
-                
+
                 fig_frontier.add_trace(go.Scatter(
-                    x=[curr_std], 
-                    y=[curr_return], 
-                    mode='markers', 
-                    marker=dict(size=15, color='red', symbol='star'), 
+                    x=[curr_std],
+                    y=[curr_return],
+                    mode='markers',
+                    marker=dict(size=15, color='red', symbol='star'),
                     name='Optimal Portfolio'
                 ))
-            
+
             fig_frontier.update_layout(
-                title="Efficient Frontier", 
-                xaxis_title="Risk (Standard Deviation)", 
-                yaxis_title="Expected Return", 
-                height=500, 
-                hovermode='closest'
+                title="📊 Efficient Frontier Analysis",
+                xaxis_title="Risk (Standard Deviation)",
+                yaxis_title="Expected Return",
+                height=500,
+                hovermode='closest',
+                template='plotly_white',
+                plot_bgcolor='rgba(249, 250, 251, 0.5)',
+                margin=dict(l=80, r=80, t=80, b=80)
             )
-            st.plotly_chart(fig_frontier, width="stretch")
-            
-            # Risk Decomposition
+            st.plotly_chart(fig_frontier, use_container_width=True)
+
+            # ===== RISK DECOMPOSITION =====
             if analyzer.weights is not None and analyzer.attribution is not None:
+                st.markdown("---")
                 st.subheader("🎯 Risk Decomposition")
                 risk_contrib = analyzer.attribution['Risk Contribution']
                 # Filter out negligible negative risks for pie chart
                 risk_contrib = risk_contrib[risk_contrib > 0.0001]
-                
+
                 fig_risk = px.pie(
-                    values=risk_contrib.values, 
-                    names=risk_contrib.index, 
-                    title="Portfolio Risk Contribution by Asset", 
-                    hole=0.3
+                    values=risk_contrib.values,
+                    names=risk_contrib.index,
+                    title="Portfolio Risk Contribution by Asset",
+                    hole=0.3,
+                    color_discrete_sequence=px.colors.qualitative.Set3
                 )
-                fig_risk.update_layout(height=400)
-                st.plotly_chart(fig_risk, width="stretch")
-        
-        # --- Download Section ---
-        st.markdown("---")
-        st.subheader("📥 Export Results")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            excel_data = analyzer.get_excel()
-            st.download_button(
-                label="📊 Download Excel Report",
-                data=excel_data,
-                file_name=f"Portfolio_Analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch"
-            )
-        
-        with col2:
-            # Create summary text report
-            summary_report = f"""
+                fig_risk.update_layout(
+                    height=400,
+                    template='plotly_white',
+                    margin=dict(l=50, r=50, t=80, b=50)
+                )
+                st.plotly_chart(fig_risk, use_container_width=True)
+
+            # --- Download Section ---
+            st.markdown("---")
+            st.subheader("📥 Export Results")
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                excel_data = analyzer.get_excel()
+                st.download_button(
+                    label="📊 Download Excel Report",
+                    data=excel_data,
+                    file_name=f"Portfolio_Analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    width="stretch"
+                )
+
+            with col2:
+                # Variables like start_date/end_date need to be defined in your session state or previous code
+                summary_report = f"""
 PORTFOLIO ANALYSIS REPORT
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 CONFIGURATION
 =============
 Tickers: {', '.join(analyzer.tickers)}
-Period: {start_date} to {end_date}
-Optimization Method: {opt_method}
-Risk Model: {risk_model}
-Return Model: {ret_model}
+Optimization Method: {opt_method if 'opt_method' in locals() else 'N/A'}
+Risk Model: {risk_model if 'risk_model' in locals() else 'N/A'}
+Return Model: {ret_model if 'ret_model' in locals() else 'N/A'}
 
 PORTFOLIO COMPOSITION
 ====================
@@ -1656,25 +1922,25 @@ Total Return: {analyzer.backtest_metrics.get('total_return', 'N/A'):.2%} if anal
 Sharpe Ratio: {analyzer.backtest_metrics.get('sharpe_ratio', 'N/A'):.2f} if analyzer.backtest_metrics else 'N/A'
 Max Drawdown: {analyzer.backtest_metrics.get('max_drawdown', 'N/A'):.2%} if analyzer.backtest_metrics else 'N/A'
 """
-            st.download_button(
-                label="📄 Download Text Report",
-                data=summary_report,
-                file_name=f"Portfolio_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain",
-                width="stretch"
-            )
-        
-        with col3:
-            if st.button("🔄 Reset Analysis", width="stretch"):
-                st.rerun()
+                st.download_button(
+                    label="📄 Download Text Report",
+                    data=summary_report,
+                    file_name=f"Portfolio_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain",
+                    width="stretch"
+                )
 
-# Footer
-st.markdown("---")
-st.markdown(
-    """
-    <div style='text-align: center; color: gray;'>
-    Portfolio Optimizer
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+            with col3:
+                if st.button("🔄 Reset Analysis", width="stretch"):
+                    st.rerun()
+
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        """
+        <div style='text-align: center; color: gray;'>
+        Portfolio Optimizer
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
