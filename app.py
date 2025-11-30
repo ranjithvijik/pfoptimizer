@@ -1355,128 +1355,130 @@ if run_btn:
         # TAB 5: Advanced Analytics
         with tab5:
             st.header("Advanced Analytics")
-            
-            # Market Regime Analysis
             st.subheader("🌡️ Market Regime Analysis")
             
-            if analyzer.regime is not None:
-                # Regime timeline
+            # Check if regime data exists and is not empty
+            if analyzer.regime is not None and not analyzer.regime.empty:
                 fig_regime_timeline = go.Figure()
                 
-                # Create color mapping
+                # Define colors with opacity
                 regime_colors = {
-                    'Bull': 'rgba(0, 128, 0, 0.2)',   # Green with opacity
-                    'Bear': 'rgba(255, 0, 0, 0.2)',   # Red with opacity
-                    'High Vol': 'rgba(255, 165, 0, 0.2)', # Orange with opacity
-                    'Normal': 'rgba(0, 0, 255, 0.2)', # Blue with opacity
+                    'Bull': 'rgba(0, 128, 0, 0.2)', 
+                    'Bear': 'rgba(255, 0, 0, 0.2)', 
+                    'High Vol': 'rgba(255, 165, 0, 0.2)', 
+                    'Normal': 'rgba(0, 0, 255, 0.2)', 
                     'Unknown': 'rgba(128, 128, 128, 0.2)'
                 }
                 
-                # OPTIMIZED: Group consecutive dates to reduce shape count
+                # Create a DataFrame for grouping consecutive regimes
                 df_regime = analyzer.regime.to_frame(name='regime')
                 df_regime['group'] = (df_regime['regime'] != df_regime['regime'].shift()).cumsum()
                 
-                # Iterate through groups instead of individual days
+                # Add colored background rectangles
                 for _, group_data in df_regime.groupby('group'):
                     regime_type = group_data['regime'].iloc[0]
-                    start_date = group_data.index[0]
-                    # Extend end date slightly to cover the last bar
-                    end_date = group_data.index[-1] + pd.Timedelta(days=1)
-                    
-                    fig_regime_timeline.add_vrect(
-                        x0=start_date, 
-                        x1=end_date,
-                        fillcolor=regime_colors.get(regime_type, 'gray'),
-                        opacity=1, # Opacity is handled in the color string above
-                        layer="below",
-                        line_width=0
-                    )
+                    # Ensure we have valid dates
+                    if len(group_data) > 0:
+                        start_date = group_data.index[0]
+                        # Extend the rectangle to the next available date or add 1 day
+                        end_date = group_data.index[-1] + pd.Timedelta(days=1)
+                        
+                        fig_regime_timeline.add_vrect(
+                            x0=start_date, 
+                            x1=end_date, 
+                            fillcolor=regime_colors.get(regime_type, 'gray'), 
+                            opacity=1, 
+                            layer="below", 
+                            line_width=0
+                        )
                 
-                # Add SPY price
-                if 'SPY' in analyzer.prices.columns:
-                    spy_norm = (analyzer.prices['SPY'] / analyzer.prices['SPY'].iloc[0]) * 100
-                    fig_regime_timeline.add_trace(go.Scatter(
-                        x=spy_norm.index,
-                        y=spy_norm.values,
-                        name='Market Index',
-                        line=dict(color='black', width=2)
-                    ))
+                # Calculate and Plot SPY (Benchmark)
+                spy_rets = analyzer.benchmark_returns.fillna(0)
+                
+                # Reindex to match the regime timeline exactly
+                spy_rets = spy_rets.reindex(analyzer.regime.index).fillna(0)
+                
+                # Calculate cumulative performance
+                spy_norm = (1 + spy_rets).cumprod() * 100
+                
+                # Normalize to start at 100
+                if len(spy_norm) > 0:
+                    spy_norm = spy_norm / spy_norm.iloc[0] * 100
+                
+                fig_regime_timeline.add_trace(go.Scatter(
+                    x=spy_norm.index, 
+                    y=spy_norm.values, 
+                    name='Market Index (SPY)', 
+                    line=dict(color='black', width=2)
+                ))
                 
                 fig_regime_timeline.update_layout(
-                    title="Market Regime Timeline",
-                    xaxis_title="Date",
-                    yaxis_title="Normalized Price",
-                    height=400,
-                    showlegend=True
+                    title="Market Regime Timeline", 
+                    xaxis_title="Date", 
+                    yaxis_title="Normalized Price", 
+                    height=400, 
+                    showlegend=True,
+                    hovermode="x unified"
                 )
-                
                 st.plotly_chart(fig_regime_timeline, width="stretch")
                 
-                # Regime statistics
+                # Regime Stats Columns
                 col1, col2 = st.columns(2)
-                
                 with col1:
                     st.markdown("**Regime Distribution**")
                     regime_stats = analyzer.regime.value_counts(normalize=True)
                     for regime, pct in regime_stats.items():
                         st.write(f"• {regime}: {pct:.1%}")
-                
                 with col2:
                     st.markdown("**Current Regime**")
                     if not analyzer.regime.empty:
                         current_regime = analyzer.regime.iloc[-1]
-                        # Extract color name for HTML display (simplified)
                         color_map = {'Bull': 'green', 'Bear': 'red', 'High Vol': 'orange', 'Normal': 'blue'}
                         regime_color = color_map.get(current_regime, 'gray')
-                        st.markdown(f"<h3 style='color: {regime_color}'>{current_regime}</h3>", 
-                                  unsafe_allow_html=True)
+                        st.markdown(f"<h3 style='color: {regime_color}'>{current_regime}</h3>", unsafe_allow_html=True)
+            else:
+                st.warning("Not enough data to calculate Market Regimes. Try increasing the date range.")
             
-            # Efficient Frontier
+            # Efficient Frontier Section
+            st.markdown("---")
             st.subheader("📈 Efficient Frontier")
             
-            # Calculate efficient frontier
+            # Efficient Frontier Calculations
             returns_mean = analyzer.returns.mean() * analyzer.freq_scaler
             cov_matrix = analyzer.returns.cov() * analyzer.freq_scaler
             
-            # Generate portfolio combinations
             n_portfolios = 1000
             results = np.zeros((3, n_portfolios))
-            
             np.random.seed(10)
+            
             for i in range(n_portfolios):
                 weights = np.random.random(len(analyzer.returns.columns))
                 weights /= np.sum(weights)
-                
                 portfolio_return = np.sum(weights * returns_mean)
                 portfolio_std = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-                
                 results[0, i] = portfolio_return
                 results[1, i] = portfolio_std
-                # Use scalar RF for consistency with frontier chart
                 results[2, i] = (portfolio_return - rf_rate) / portfolio_std if portfolio_std > 0 else 0
             
-            # Create scatter plot
             fig_frontier = go.Figure()
-            
             fig_frontier.add_trace(go.Scatter(
-                x=results[1],
-                y=results[0],
-                mode='markers',
+                x=results[1], 
+                y=results[0], 
+                mode='markers', 
                 marker=dict(
-                    size=5,
-                    color=results[2],
-                    colorscale='Viridis',
-                    showscale=True,
+                    size=5, 
+                    color=results[2], 
+                    colorscale='Viridis', 
+                    showscale=True, 
                     colorbar=dict(title="Sharpe Ratio")
-                ),
-                text=[f"Sharpe: {s:.2f}" for s in results[2]],
-                hovertemplate="Risk: %{x:.2%}<br>Return: %{y:.2%}<br>%{text}",
+                ), 
+                text=[f"Sharpe: {s:.2f}" for s in results[2]], 
+                hovertemplate="Risk: %{x:.2%}<br>Return: %{y:.2%}<br>%{text}", 
                 name='Random Portfolios'
             ))
             
-            # Add current portfolio
             if analyzer.weights is not None:
-                # Need to use the full weight array aligned with returns columns
+                # Align optimal weights to the returns columns
                 curr_weights_series = analyzer.weights.set_index('Ticker')['Weight']
                 curr_weights_aligned = np.array([curr_weights_series.get(t, 0.0) for t in analyzer.returns.columns])
                 
@@ -1484,38 +1486,35 @@ if run_btn:
                 curr_std = np.sqrt(np.dot(curr_weights_aligned.T, np.dot(cov_matrix.values, curr_weights_aligned)))
                 
                 fig_frontier.add_trace(go.Scatter(
-                    x=[curr_std],
-                    y=[curr_return],
-                    mode='markers',
-                    marker=dict(size=15, color='red', symbol='star'),
+                    x=[curr_std], 
+                    y=[curr_return], 
+                    mode='markers', 
+                    marker=dict(size=15, color='red', symbol='star'), 
                     name='Optimal Portfolio'
                 ))
             
             fig_frontier.update_layout(
-                title="Efficient Frontier",
-                xaxis_title="Risk (Standard Deviation)",
-                yaxis_title="Expected Return",
-                height=500,
+                title="Efficient Frontier", 
+                xaxis_title="Risk (Standard Deviation)", 
+                yaxis_title="Expected Return", 
+                height=500, 
                 hovermode='closest'
             )
-            
             st.plotly_chart(fig_frontier, width="stretch")
             
             # Risk Decomposition
             if analyzer.weights is not None and analyzer.attribution is not None:
                 st.subheader("🎯 Risk Decomposition")
-                
-                # Create risk contribution pie chart
                 risk_contrib = analyzer.attribution['Risk Contribution']
-                risk_contrib = risk_contrib[risk_contrib > 0]
+                # Filter out negligible negative risks for pie chart
+                risk_contrib = risk_contrib[risk_contrib > 0.0001]
                 
                 fig_risk = px.pie(
-                    values=risk_contrib.values,
-                    names=risk_contrib.index,
-                    title="Portfolio Risk Contribution by Asset",
+                    values=risk_contrib.values, 
+                    names=risk_contrib.index, 
+                    title="Portfolio Risk Contribution by Asset", 
                     hole=0.3
                 )
-                
                 fig_risk.update_layout(height=400)
                 st.plotly_chart(fig_risk, width="stretch")
         
