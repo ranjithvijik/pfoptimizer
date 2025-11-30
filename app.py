@@ -343,7 +343,10 @@ class EnhancedUnifiedAnalyzer:
         valid_tickers = [t for t in tickers if t in df_close.columns]
         
         self.prices = df_close[valid_tickers]
-        self.returns = all_returns[valid_tickers]
+        metrics_tickers = valid_tickers.copy()
+        if 'SPY' in all_returns.columns:
+            metrics_tickers.append('SPY')
+        self.returns = all_returns[metrics_tickers]
 
         # Computations
         self._compute_metrics()
@@ -644,8 +647,21 @@ class EnhancedUnifiedAnalyzer:
             tracking_error = active_returns.std() * np.sqrt(252)
             info_ratio = active_returns.mean() / tracking_error if tracking_error > 0 else 0
         else:
-            tracking_error = np.nan
-            info_ratio = np.nan
+            # Use equal-weight portfolio as fallback
+            asset_returns = self.returns.iloc[:, :-1]
+            equal_weight_returns = asset_returns.mean(axis=1)
+            equal_weight_port = (1 + equal_weight_returns).cumprod() * 100
+            equal_weight_bench_rets = equal_weight_port.pct_change().dropna()
+    
+            benchmark_aligned = equal_weight_bench_rets.reindex(strategy_returns.index).fillna(0)
+            active_returns = strategy_returns['Value'] - benchmark_aligned
+    
+            if len(active_returns) > 0 and active_returns.std() > 0:
+                tracking_error = active_returns.std() * np.sqrt(252)
+                info_ratio = active_returns.mean() / tracking_error
+            else:
+                tracking_error = 0.0
+                info_ratio = 0.0
         
         self.backtest_metrics = {
             'total_return': (vals[-1] / 100 - 1) if vals else 0,
