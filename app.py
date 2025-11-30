@@ -252,29 +252,67 @@ class EnhancedUnifiedAnalyzer:
 
         # --- Robust Flattening Logic ---
         df_close = pd.DataFrame()
-        
+        failed_tickers = []
+        successful_tickers = []
         # Handle single ticker vs multi ticker structure
         if len(tickers) == 1:
-            ticker = tickers[0]
+            ticker = tickers
             # Try finding the ticker in columns if multi-index
             if isinstance(raw_data.columns, pd.MultiIndex):
                 try:
                     df_close[ticker] = raw_data[ticker]['Close']
+                    successful_tickers.append(ticker)
                 except KeyError:
-                     # Sometimes single ticker is flat
+                    # Sometimes single ticker is flat
                     if 'Close' in raw_data.columns:
                         df_close[ticker] = raw_data['Close']
+                        successful_tickers.append(ticker)
+                    else:
+                        failed_tickers.append(f"{ticker} (Close column not found)")
             else:
-                 if 'Close' in raw_data.columns:
+                if 'Close' in raw_data.columns:
                     df_close[ticker] = raw_data['Close']
+                    successful_tickers.append(ticker)
+                else:
+                    failed_tickers.append(f"{ticker} (Close column not found)")
         else:
+            # Multi-ticker extraction with comprehensive error handling
             for t in tickers:
                 try:
-                    # With group_by='ticker', accessing raw_data[t] gives a DF with OHLC
-                    if t in raw_data.columns.levels[0]:
-                         df_close[t] = raw_data[t]['Close']
-                except:
-                    continue
+                    if isinstance(raw_data.columns, pd.MultiIndex):
+                        # MultiIndex case: raw_data[ticker]['Close']
+                        if t in raw_data.columns.get_level_values(0):
+                            df_close[t] = raw_data[t]['Close']
+                            successful_tickers.append(t)
+                        else:
+                            failed_tickers.append(f"{t} (not in MultiIndex)")
+                    elif t in raw_data.columns:
+                        # Single level columns: direct access
+                        df_close[t] = raw_data[t]
+                        successful_tickers.append(t)
+                    else:
+                        failed_tickers.append(f"{t} (not found in data)")
+        
+                except KeyError as e:
+                    failed_tickers.append(f"{t} (KeyError: {str(e)})")
+                except Exception as e:
+                    failed_tickers.append(f"{t} ({type(e).__name__}: {str(e)})")
+
+        if failed_tickers and successful_tickers:
+            # Mixed success/failure
+            st.warning(
+                f"⚠️ Partial data extraction:\\n"
+                f"✅ Successfully extracted: {', '.join(successful_tickers)}\\n"
+                f"❌ Could not extract: {', '.join(failed_tickers)}"
+            )
+        elif failed_tickers and not successful_tickers:
+            # Complete failure
+            st.error(
+                f"❌ Could not extract Close prices for any tickers.\\n"
+                f"Failed: {', '.join(failed_tickers)}\\n"
+                f"Please verify ticker symbols are correct."
+            )
+            return False
         
         if df_close.empty:
             st.error("Could not parse 'Close' prices from data.")
@@ -622,7 +660,7 @@ class EnhancedUnifiedAnalyzer:
         
         return self.backtest_res
     
-    def monte_carlo_simulation(self, n_simulations=1000, n_days=252):
+    def monte_carlo_simulation(self, n_simulations=1000, n_days=252, distribution='normal'):
         """Run Monte Carlo simulation for portfolio outcomes"""
         if self.weights is None:
             return None
@@ -743,17 +781,34 @@ with st.sidebar:
         if len(valid_tickers) < len(raw_tickers):
             st.warning(f"Invalid tickers removed")
         tickers = valid_tickers
-        
+    
         col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input(
                 "Start Date", 
-                datetime.now() - timedelta(days=3*365)
+                datetime.now() - timedelta(days=3*365),
+                help="Historical data start date"
             )
         with col2:
             end_date = st.date_input(
                 "End Date", 
-                datetime.today()
+                datetime.today(),
+                help="Historical data end date"
+            )
+    
+        # Validate date range
+        if start_date >= end_date:
+            st.error("❌ Start date must be before end date!")
+            st.stop()
+    
+        # Calculate days difference
+        days_diff = (end_date - start_date).days
+    
+        # Warn if data period is too short
+        if days_diff < 30:
+            st.warning(
+                f"⚠️ Only {days_diff} days of data."
+                f"Recommend at least 60 days for reliable statistical analysis."
             )
         
         interval = st.selectbox(
