@@ -890,7 +890,7 @@ with st.sidebar:
         if run_monte_carlo:
             n_simulations = st.slider(
                 "Number of Simulations", 
-                100, 5000, 1000, 100
+                100, 10000, 2000, 500
             )
             mc_days = st.slider(
                 "Simulation Days", 
