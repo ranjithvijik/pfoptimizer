@@ -1542,18 +1542,34 @@ if run_btn:
             returns_mean = analyzer.returns.mean() * analyzer.freq_scaler
             cov_matrix = analyzer.returns.cov() * analyzer.freq_scaler
             
-            n_portfolios = 1000
-            results = np.zeros((3, n_portfolios))
+            # Vectorized Efficient Frontier
+            n_portfolios = 10000
+            n_assets = len(analyzer.returns.columns)
+            
             np.random.seed(10)
             
-            for i in range(n_portfolios):
-                weights = np.random.random(len(analyzer.returns.columns))
-                weights /= np.sum(weights)
-                portfolio_return = np.sum(weights * returns_mean)
-                portfolio_std = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-                results[0, i] = portfolio_return
-                results[1, i] = portfolio_std
-                results[2, i] = (portfolio_return - rf_rate) / portfolio_std if portfolio_std > 0 else 0
+            # 1. Generate all random weights at once (N x M matrix)
+            weights = np.random.random((n_portfolios, n_assets))
+            # 2. Normalize each portfolio (each row sums to 1)
+            weights /= weights.sum(axis=1, keepdims=True)
+            
+            # 3. Calculate returns for all portfolios (N,)
+            port_returns = np.dot(weights, returns_mean.values)
+            
+            # 4. Calculate volatility for all portfolios (N,)
+            # Formula: sqrt(w @ Cov @ w^T) for each portfolio
+            # Efficient: sum((w @ Cov) * w, axis=1) then sqrt
+            port_vols = np.sqrt(np.sum((weights @ cov_matrix.values) * weights, axis=1))
+            
+            # 5. Calculate Sharpe ratios for all portfolios (N,)
+            port_sharpe = np.divide(
+                port_returns - rf_rate,
+                port_vols,
+                out=np.zeros(n_portfolios),
+                where=port_vols != 0
+            )
+            
+            results = np.vstack([port_returns, port_vols, port_sharpe])
             
             fig_frontier = go.Figure()
             fig_frontier.add_trace(go.Scatter(
