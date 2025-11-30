@@ -62,8 +62,9 @@ def get_stock_data(tickers, start, end, interval):
         tickers = [tickers]
         
     try:
+        download_list = list(set(tickers + ['SPY']))
         data = yf.download(
-            tickers, 
+            download_list, 
             start=start, 
             end=end, 
             interval=interval, 
@@ -216,6 +217,7 @@ class EnhancedUnifiedAnalyzer:
     def __init__(self):
         self.prices = pd.DataFrame()
         self.returns = pd.DataFrame()
+        self.benchmark_returns = pd.Series()
         self.metrics = pd.DataFrame()
         self.snapshot = pd.DataFrame()
         self.rolling = {}
@@ -240,7 +242,9 @@ class EnhancedUnifiedAnalyzer:
         else: 
             self.freq_scaler = 252
             
-        raw_data = get_stock_data(tickers, start, end, interval)
+        download_list = list(set(tickers + ['SPY']))
+        
+        raw_data = get_stock_data(download_list, start, end, interval)
         
         if raw_data is None or raw_data.empty:
             st.error("No data returned. Please check tickers.")
@@ -285,12 +289,22 @@ class EnhancedUnifiedAnalyzer:
         df_close = df_close.dropna(thresh=int(0.7*len(df_close)), axis=1) 
         df_close = df_close.dropna(axis=0) 
         
-        self.prices = df_close
-        self.returns = df_close.pct_change().dropna()
+        all_returns = df_close.pct_change().dropna()
         
-        if self.returns.empty:
+        if all_returns.empty:
             st.error("Not enough data to calculate returns.")
             return False
+
+        # Extract SPY for calculations
+        if 'SPY' in all_returns.columns:
+            self.benchmark_returns = all_returns['SPY']
+        else:
+            self.benchmark_returns = all_returns.mean(axis=1) # Fallback
+
+        valid_tickers = [t for t in tickers if t in df_close.columns]
+        
+        self.prices = df_close[valid_tickers]
+        self.returns = all_returns[valid_tickers]
 
         # Computations
         self._compute_metrics()
@@ -377,7 +391,7 @@ class EnhancedUnifiedAnalyzer:
             
         self.snapshot = pd.DataFrame(
             snap, 
-            columns=['Ticker','Last Price','1M','3M','YTD','1Y','Vol','MaxDD']
+            columns=['Ticker','Last Price','1M','3M','YTD','1Y','Volatility','MaxDD']
         ).set_index('Ticker')
     
     def _compute_rolling(self, windows=[21, 63, 126]):
@@ -579,10 +593,10 @@ class EnhancedUnifiedAnalyzer:
         # Calculate enhanced metrics
         strategy_returns = self.backtest_res.pct_change().dropna()
         
-        if 'SPY' in self.returns.columns:
-            # Align dates
-            benchmark_returns = self.returns['SPY'].reindex(strategy_returns.index).fillna(0)
-            active_returns = strategy_returns['Value'] - benchmark_returns
+        if not self.benchmark_returns.empty:
+            benchmark_aligned = self.benchmark_returns.reindex(strategy_returns.index).fillna(0)
+            
+            active_returns = strategy_returns['Value'] - benchmark_aligned
             tracking_error = active_returns.std() * np.sqrt(252)
             info_ratio = active_returns.mean() / tracking_error if tracking_error > 0 else 0
         else:
@@ -884,7 +898,7 @@ if run_btn:
                 '3M': '{:.2%}', 
                 'YTD': '{:.2%}', 
                 '1Y': '{:.2%}', 
-                'Vol': '{:.2%}', 
+                'Volatility': '{:.2%}', 
                 'MaxDD': '{:.2%}'
             }).background_gradient(subset=['1M', '3M', 'YTD', '1Y'], cmap='RdYlGn', vmin=-0.2, vmax=0.2)
             
