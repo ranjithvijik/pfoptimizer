@@ -469,9 +469,8 @@ class EnhancedUnifiedAnalyzer:
             (sma_short <= sma_long) & (volatility <= volatility.quantile(0.8))
         ]
         choices = ['High Vol', 'Bull', 'Bear']
-        regime = np.select(conditions, choices, default='Normal')
-        
-        self.regime = regime
+        regime_array = np.select(conditions, choices, default='Normal')
+        self.regime = pd.Series(regime_array, index=spy_returns.index)
     
     def optimize_portfolio(self, method="Sharpe", risk_model="Sample", 
                            ret_model="Mean", bounds=(0,1), rf=0.04, views_dict=None):
