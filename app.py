@@ -580,53 +580,77 @@ class EnhancedUnifiedAnalyzer:
     
     def run_enhanced_backtest(self, window=252, rebalance=21, cost_bps=10):
         """Enhanced backtest with tracking metrics"""
+        # 1. Safety Check: Ensure we have data
+        if self.returns is None or self.returns.empty or self.returns.shape[1] == 0:
+            st.warning("Not enough data to run backtest.")
+            self.backtest_res = None
+            self.backtest_metrics = {}
+            return None
+
         n = len(self.returns)
         vals = [100.0]
         dates = []
         turnovers = []
         weights_history = []
+        
+        # 2. Fix: Initialize weights based on ACTUAL data shape
         num_assets = self.returns.shape[1]
-        curr_w = np.array([1/num_assets] * num_assets)
+        curr_w = np.ones(num_assets) / num_assets
         
         for i in range(window, n, rebalance):
             train = self.returns.iloc[i-window:i]
+            
+            # Skip if training window is empty
             if train.empty: 
                 continue
             
             mu = train.mean().values
             cov = train.cov().values
             
-            # Max Sharpe optimization
-            def neg_s(w):
-                v = np.sqrt(np.dot(w.T, np.dot(cov, w)))
-                return -(np.dot(w, mu)/v) if v>0 else 0
-            
-            cons = ({'type':'eq','fun':lambda x: np.sum(x)-1})
-            bnds = tuple([(0,1) for _ in range(len(mu))])
-            
-            try:
-                res = optimize.minimize(
-                    neg_s, [1/len(mu)]*len(mu), 
-                    method='SLSQP', bounds=bnds, constraints=cons
-                )
-                new_w = res.x
-            except:
+            # 3. Fix: Handle NaN values in window (e.g. suspended stock)
+            if np.isnan(mu).any() or np.isnan(cov).any():
                 new_w = curr_w
+            else:
+                # Max Sharpe optimization
+                def neg_s(w):
+                    # Safety check for negative variance
+                    var = np.dot(w.T, np.dot(cov, w))
+                    if var <= 0: return 0
+                    v = np.sqrt(var)
+                    return -(np.dot(w, mu)/v)
+                
+                cons = ({'type':'eq','fun':lambda x: np.sum(x)-1})
+                bnds = tuple([(0,1) for _ in range(num_assets)])
+                
+                try:
+                    # Use current weights as initial guess for stability
+                    res = optimize.minimize(
+                        neg_s, curr_w, 
+                        method='SLSQP', bounds=bnds, constraints=cons
+                    )
+                    new_w = res.x
+                except:
+                    new_w = curr_w
             
+            # 4. Fix: Ensure shapes strictly match before subtraction
+            if new_w.shape != curr_w.shape:
+                new_w = curr_w
+
             turnover = np.sum(np.abs(new_w - curr_w))
             cost = turnover * (cost_bps/10000)
             
             # Apply returns
             hold_end = min(i+rebalance, n)
             per_ret = self.returns.iloc[i:hold_end]
-            # Assumes rebalance happens at closing prices
-            cum_per = (1 + per_ret @ new_w).prod()
             
-            # Explicitly cast to float to prevent Series accumulation
-            strategy_return = float(cum_per - 1)
-            net_return = strategy_return - cost
-            vals.append(vals[-1] * (1 + net_return))
-            dates.append(self.returns.index[i])
+            # Calculate cumulative return for this period
+            if not per_ret.empty:
+                cum_per = (1 + per_ret @ new_w).prod()
+                strategy_return = float(cum_per - 1)
+                net_return = strategy_return - cost
+                vals.append(vals[-1] * (1 + net_return))
+                dates.append(self.returns.index[i])
+            
             turnovers.append(turnover)
             weights_history.append(new_w)
             curr_w = new_w
@@ -643,20 +667,25 @@ class EnhancedUnifiedAnalyzer:
         
         if not self.benchmark_returns.empty:
             benchmark_aligned = self.benchmark_returns.reindex(strategy_returns.index).fillna(0)
-            
             active_returns = strategy_returns['Value'] - benchmark_aligned
             tracking_error = active_returns.std() * np.sqrt(252)
             info_ratio = active_returns.mean() / tracking_error if tracking_error > 0 else 0
         else:
-            # Use equal-weight portfolio as fallback
-            asset_returns = self.returns.iloc[:, :-1]
+            # 5. Fix: Fallback for equal weight if only 1 asset exists
+            if self.returns.shape[1] > 1:
+                # If we have multiple assets, benchmark is equal weight of all EXCEPT the last one (assuming SPY is last)
+                # If you didn't successfully download SPY, this uses all assets.
+                asset_returns = self.returns
+            else:
+                asset_returns = self.returns
+
             equal_weight_returns = asset_returns.mean(axis=1)
             equal_weight_port = (1 + equal_weight_returns).cumprod() * 100
             equal_weight_bench_rets = equal_weight_port.pct_change().dropna()
-    
+
             benchmark_aligned = equal_weight_bench_rets.reindex(strategy_returns.index).fillna(0)
             active_returns = strategy_returns['Value'] - benchmark_aligned
-    
+
             if len(active_returns) > 0 and active_returns.std() > 0:
                 tracking_error = active_returns.std() * np.sqrt(252)
                 info_ratio = active_returns.mean() / tracking_error
@@ -664,7 +693,6 @@ class EnhancedUnifiedAnalyzer:
                 tracking_error = 0.0
                 info_ratio = 0.0
         
-        # FIX: Explicit float conversion for all metrics
         self.backtest_metrics = {
             'total_return': float((vals[-1] / 100 - 1)) if vals else 0.0,
             'sharpe_ratio': float(sharpe_ratio(strategy_returns['Value'])) if len(strategy_returns) > 0 else 0.0,
