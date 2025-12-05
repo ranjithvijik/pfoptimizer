@@ -71,7 +71,7 @@ def get_stock_data(tickers, start, end, interval):
             group_by='ticker', 
             auto_adjust=True,
             progress=False,
-            threads=True
+            threads=False
         )
         return data
     except Exception as e:
