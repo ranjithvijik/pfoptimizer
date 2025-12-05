@@ -1,7 +1,5 @@
 # 📊 Portfolio Optimizer - User Guide
 
-Welcome to the **Portfolio Optimizer Streamlit App**! This comprehensive guide walks you through every feature and setting.
-
 **Live App:** https://pfoptimizer.streamlit.app/
 
 ---
@@ -1528,13 +1526,3 @@ Portfolio A more vulnerable to bad news
 - Max Drawdown < -60% (too risky)
 - Optimal portfolio not on frontier
 - One stock dominates entire portfolio
-
----
-
-**Ready to optimize?** 🚀
-
-Head to https://pfoptimizer.streamlit.app/ and start building your ideal portfolio!
-
----
-
-**Last Updated:** November 30, 2025
