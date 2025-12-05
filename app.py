@@ -612,11 +612,7 @@ class EnhancedUnifiedAnalyzer:
             except:
                 new_w = curr_w
             
-            new_w = pd.Series(new_w, index=tickers) if not isinstance(new_w, pd.Series) else new_w
-            curr_w = pd.Series(curr_w, index=tickers) if not isinstance(curr_w, pd.Series) else curr_w
-            new_w = new_w.reindex(tickers, fill_value=0)
-            curr_w = curr_w.reindex(tickers, fill_value=0)
-            turnover = np.sum(np.abs(new_w.values - curr_w.values))
+            turnover = np.sum(np.abs(new_w - curr_w))
             cost = turnover * (cost_bps/10000)
             
             # Apply returns
