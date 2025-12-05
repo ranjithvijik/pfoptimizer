@@ -585,7 +585,8 @@ class EnhancedUnifiedAnalyzer:
         dates = []
         turnovers = []
         weights_history = []
-        curr_w = np.array([1/len(self.tickers)]*len(self.tickers))
+        num_assets = self.returns.shape[1]
+        curr_w = np.array([1/num_assets] * num_assets)
         
         for i in range(window, n, rebalance):
             train = self.returns.iloc[i-window:i]
